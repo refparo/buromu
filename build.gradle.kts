@@ -7,14 +7,15 @@ plugins {
   id("net.mamoe.mirai-console") version miraiVersion
 }
 
+group = "one.paro"
+version = "0.0.1"
+
 repositories {
   mavenLocal()
   maven("https://mirrors.cloud.tencent.com/nexus/repository/maven-public/")
   mavenCentral()
 }
 
-dependencies {
-}
+dependencies {}
 
-testing {
-}
+testing {}
