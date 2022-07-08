@@ -5,10 +5,4 @@
 !.idea/codeStyles
 !.idea/vcs.xml
 
-bots
-config
-data
-logs
-plugin-libraries
-plugin-shared-libraries
-plugins
+debug-sandbox

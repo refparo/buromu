@@ -1,28 +1,19 @@
-package one.paro.mirai
+package one.paro.buromu
 
 import kotlin.math.min
 import kotlinx.coroutines.*
 
-import net.mamoe.mirai.console.plugin.jvm.JvmPluginDescription
-import net.mamoe.mirai.console.plugin.jvm.KotlinPlugin
 import net.mamoe.mirai.contact.User
 import net.mamoe.mirai.event.ConcurrencyKind
 import net.mamoe.mirai.event.EventPriority
 import net.mamoe.mirai.event.events.*
 import net.mamoe.mirai.event.globalEventChannel
 
-import one.paro.buromu.sendMessageIn
+class Throttler: CoroutineScope {
+  override val coroutineContext = Core.coroutineContext
+  private val logger = Core.logger.derive(this::class)
 
-object Throttler: KotlinPlugin(JvmPluginDescription(
-  id = "one.paro.throttler",
-  version = "0.0.1",
-  block = {
-    name("Throttler")
-    author("Paro")
-    info("通用的消息限流插件")
-  }
-)) {
-  override fun onEnable() {
+  fun onEnable() {
     limitSimultaneousConversations()
     limitMsgSendRate()
   }

@@ -28,6 +28,68 @@ class HourAlarm: CoroutineScope {
           MutableMap<Int, String>>>>()
   }
 
+  fun onEnable() {
+    Data.reload()
+
+    val now = LocalTime.now()
+    timer.scheduleAtFixedRate(task,
+      (1.hours
+        - now.minute.minutes
+        - now.second.seconds
+        - now.nano.nanoseconds).inWholeMilliseconds,
+      1.hours.inWholeMilliseconds)
+
+    Core.globalEventChannel(coroutineContext).subscribeFriendMessages {
+      contains("帮我管理时间") {
+        if (it.contains("不用帮我管理时间")) return@contains
+        if (Data.users[bot.id]?.containsKey(subject.id) == true) {
+          subject.sendMessage("我已经在帮你了")
+        } else {
+          subject.sendMessageIn("好啊", "好")
+          subject.sendMessageIn(
+            "不过，既然要求了，就要听话哦",
+            "但可不要反悔啊"
+          )
+          // MutableMap.getOrPut doesn't work here
+          if (!Data.users.containsKey(bot.id))
+            Data.users[bot.id] = mutableMapOf()
+          Data.users[bot.id]!![subject.id] = mutableMapOf()
+        }
+      }
+      contains("不用帮我管理时间") {
+        if (Data.users[bot.id]?.containsKey(subject.id) == true) {
+          subject.sendMessage("好吧")
+          subject.sendMessageIn(
+            "希望你没有我帮忙也能管好自己的时间",
+            "你能自己管理时间那是最好"
+          )
+          Data.users[bot.id]?.remove(subject.id)
+        } else {
+          subject.sendMessage("我怎么不记得你有叫我帮过你")
+        }
+      }
+      matching(Regex("""(\d{1,2})点我在(.+)""")) {
+        if (Data.users[bot.id]?.containsKey(subject.id) == true) {
+          val (time, activity) = it.destructured
+          Data.users[bot.id]!![subject.id]!![time.toInt()] = activity
+          subject.sendMessageIn("知道了", "收到")
+        } else {
+          subject.sendMessage("我怎么不记得你有叫我帮过你")
+        }
+      }
+      matching(Regex("""刚才我在(.+)""")) {
+        if (Data.users[bot.id]?.containsKey(subject.id) == true) {
+          val (activity) = it.destructured
+          Data.users[bot.id]!![subject.id]!![LocalTime.now().hour - 1] =
+            activity
+          subject.sendMessageIn("知道了", "收到")
+        } else {
+          subject.sendMessage("我怎么不记得你有叫我帮过你")
+        }
+      }
+    }
+  }
+
   private val timer = Timer()
   private val task = object: TimerTask() {
     fun go(
@@ -128,13 +190,18 @@ class HourAlarm: CoroutineScope {
             "在做什么呢？"
           )
           val listener = waitMessage(subject) {
-            activities[now - 1] = message.contentToString()
-            if (activities[now - 1]!!
-                .contains(Regex("什么都没做|什么也没做|摸鱼"))) {
+            val msg = message.contentToString()
+            if (msg.contains(Regex("什么都没做|什么也没做|摸鱼"))) {
               activities[now - 1] = "摸鱼"
               subject.sendMessageIn("啊这", "这样啊")
               subject.sendMessage("那接下来得加油咯")
+            } else if (msg.contains(Regex("色色|打飞机|撸管|手冲"))) {
+              activities[now - 1] = msg
+              subject.sendMessageIn("啧", "嘶")
+              subject.sendMessage("那不打扰你了")
+              subject.sendMessage("玩得愉快hhh")
             } else {
+              activities[now - 1] = msg
               subject.sendMessageIn("不错嘛", "可以")
               subject.sendMessageIn(
                 "休息一下再继续吧",
@@ -153,68 +220,7 @@ class HourAlarm: CoroutineScope {
     }
   }
 
-  fun enable() {
-    Data.reload()
-
-    val now = LocalTime.now()
-    timer.scheduleAtFixedRate(task,
-      (1.hours
-        - now.minute.minutes
-        - now.second.seconds
-        - now.nano.nanoseconds).inWholeMilliseconds,
-      1.hours.inWholeMilliseconds)
-
-    Core.globalEventChannel(coroutineContext).subscribeFriendMessages {
-      contains("帮我管理时间") {
-        if (it.contains("不用帮我管理时间")) return@contains
-        if (Data.users[bot.id]?.containsKey(subject.id) == true) {
-          subject.sendMessage("我已经在帮你了")
-        } else {
-          subject.sendMessageIn("好啊", "好")
-          subject.sendMessageIn(
-            "不过，既然要求了，就要听话哦",
-            "但可不要反悔啊"
-          )
-          // MutableMap.getOrPut doesn't work here
-          if (!Data.users.containsKey(bot.id))
-            Data.users[bot.id] = mutableMapOf()
-          Data.users[bot.id]!![subject.id] = mutableMapOf()
-        }
-      }
-      contains("不用帮我管理时间") {
-        if (Data.users[bot.id]?.containsKey(subject.id) == true) {
-          subject.sendMessage("好吧")
-          subject.sendMessageIn(
-            "希望你没有我帮忙也能管好自己的时间",
-            "你能自己管理时间那是最好"
-          )
-          Data.users[bot.id]?.remove(subject.id)
-        } else {
-          subject.sendMessage("我怎么不记得你有叫我帮过你")
-        }
-      }
-      matching(Regex("""(\d{1,2})点我在(.+)""")) {
-        if (Data.users[bot.id]?.containsKey(subject.id) == true) {
-          val (time, activity) = it.destructured
-          Data.users[bot.id]!![subject.id]!![time.toInt()] = activity
-          subject.sendMessageIn("知道了", "收到")
-        } else {
-          subject.sendMessage("我怎么不记得你有叫我帮过你")
-        }
-      }
-      matching(Regex("""刚才我在(.+)""")) {
-        if (Data.users[bot.id]?.containsKey(subject.id) == true) {
-          val (activity) = it.destructured
-          Data.users[bot.id]!![subject.id]!![LocalTime.now().hour - 1] =
-            activity
-          subject.sendMessageIn("知道了", "收到")
-        } else {
-          subject.sendMessage("我怎么不记得你有叫我帮过你")
-        }
-      }
-    }
-  }
-  fun disable() {
+  fun onDisable() {
     timer.cancel()
   }
 }

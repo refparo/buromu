@@ -3,7 +3,7 @@ plugins {
   kotlin("jvm") version kotlinVersion
   kotlin("plugin.serialization") version kotlinVersion
 
-  val miraiVersion = "2.11.1"
+  val miraiVersion = "2.12.0"
   id("net.mamoe.mirai-console") version miraiVersion
 }
 
