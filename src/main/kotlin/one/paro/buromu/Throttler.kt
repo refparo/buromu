@@ -20,6 +20,7 @@ class Throttler: CoroutineScope {
 
   private val conversations = mutableMapOf<User, Pair<Long, Job>>()
   private val blocked = mutableMapOf<User, Job>()
+  // TODO make a waiting queue instead of directly blocking
   private fun limitSimultaneousConversations() {
     globalEventChannel().subscribeAlways<UserMessageEvent>(
       priority = EventPriority.HIGHEST

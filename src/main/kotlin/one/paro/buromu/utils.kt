@@ -1,10 +1,12 @@
 package one.paro.buromu
 
 import kotlin.reflect.KClass
+import kotlinx.coroutines.*
 
 import net.mamoe.mirai.contact.User
 import net.mamoe.mirai.event.events.UserMessageEvent
 import net.mamoe.mirai.event.globalEventChannel
+import net.mamoe.mirai.event.nextEvent
 import net.mamoe.mirai.message.MessageReceipt
 import net.mamoe.mirai.utils.MiraiLogger
 
@@ -16,8 +18,8 @@ suspend fun User.sendMessageIn(
   vararg messages: String
 ): MessageReceipt<User> = sendMessage(messages.random())
 
-fun waitMessage(from: User, handler: suspend UserMessageEvent.() -> Unit) =
-  Core.globalEventChannel()
-    .filterIsInstance<UserMessageEvent>()
-    .filter { it.subject == from }
-    .subscribeOnce<UserMessageEvent> { handler() }
+fun CoroutineScope.nextMessageAsync(from: User) =
+  async(coroutineContext) {
+    Core.globalEventChannel()
+      .nextEvent<UserMessageEvent> { it.subject == from }
+  }

@@ -7,6 +7,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.nanoseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.*
+import kotlinx.coroutines.selects.select
 
 import net.mamoe.mirai.Bot
 import net.mamoe.mirai.console.data.AutoSavePluginData
@@ -17,6 +18,7 @@ import net.mamoe.mirai.event.subscribeFriendMessages
 
 import one.paro.buromu.Core.reload
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class HourAlarm: CoroutineScope {
   override val coroutineContext = Core.coroutineContext
   private val logger = Core.logger.derive(this::class)
@@ -26,6 +28,7 @@ class HourAlarm: CoroutineScope {
       MutableMap<Long,
         MutableMap<Long,
           MutableMap<Int, String>>>>()
+    // TODO calendar
   }
 
   fun onEnable() {
@@ -39,7 +42,7 @@ class HourAlarm: CoroutineScope {
         - now.nano.nanoseconds).inWholeMilliseconds,
       1.hours.inWholeMilliseconds)
 
-    Core.globalEventChannel(coroutineContext).subscribeFriendMessages {
+    Core.globalEventChannel().subscribeFriendMessages {
       contains("帮我管理时间") {
         if (it.contains("不用帮我管理时间")) return@contains
         if (Data.users[bot.id]?.containsKey(subject.id) == true) {
@@ -125,23 +128,24 @@ class HourAlarm: CoroutineScope {
             "工作时间到了！"
           )
           subject.sendMessage("这个点不会还没起床吧")
-          val listener = waitMessage(subject) {
-            subject.sendMessageIn(
-              "那就加油吧",
-              "今天也要加把劲哦",
-              "那就精神满满地开始这一天吧"
-            )
-          }
-          delay(5.minutes)
-          if (listener.complete()) {
-            subject.sendMessageIn(
-              "真没起啊……",
-              "真是小懒虫……"
-            )
-            subject.sendMessageIn(
-              "看到这条消息就赶紧起床干活啦",
-              "唉，拿你没办法"
-            )
+          select<Unit> {
+            nextMessageAsync(subject).onAwait {
+              subject.sendMessageIn(
+                "那就加油吧",
+                "今天也要加把劲哦",
+                "那就精神满满地开始这一天吧"
+              )
+            }
+            onTimeout(300_000) {
+              subject.sendMessageIn(
+                "真没起啊……",
+                "真是小懒虫……"
+              )
+              subject.sendMessageIn(
+                "看到这条消息就赶紧起床干活啦",
+                "唉，拿你没办法"
+              )
+            }
           }
         }
         21 -> go { subject, activities ->
@@ -156,29 +160,36 @@ class HourAlarm: CoroutineScope {
           activities.keys.sorted().forEach { time ->
             subject.sendMessage("${time}点，你在${activities[time]}")
           }
+          subject.sendMessage("21点，你在……")
+          select<Unit> {
+            nextMessageAsync(subject).onAwait {
+              activities[21] = it.message.contentToString().trimStart('在')
+              subject.sendMessage("……那么")
+            }
+            onTimeout(300_000) {
+              subject.sendMessage("……算了")
+            }
+          }
           activities.clear()
           subject.sendMessageIn(
             "感觉怎么样？",
             "评价一下自己？"
           )
-          val listener = waitMessage(subject) {
-            subject.sendMessageIn(
-              "之后，差不多该休息了吧？",
-              "到休息的时候了"
-            )
-            subject.sendMessageIn(
-              "去洗漱吧",
-              "关掉电脑吧"
-            )
+          select<Unit> {
+            nextMessageAsync(subject).onAwait {
+              subject.sendMessageIn(
+                "之后，差不多该休息了吧？",
+                "到休息的时候了"
+              )
+            }
+            onTimeout(300_000) {
+              subject.sendMessage("不管怎样，现在到休息时间了")
+            }
           }
-          delay(5.minutes)
-          if (listener.complete()) {
-            subject.sendMessage("不管怎样，现在到休息时间了")
-            subject.sendMessageIn(
-              "去洗漱吧",
-              "关掉电脑吧"
-            )
-          }
+          subject.sendMessageIn(
+            "去洗漱吧",
+            "关掉电脑吧"
+          )
         }
         else -> go { subject, activities ->
           subject.sendMessageIn(
@@ -189,31 +200,34 @@ class HourAlarm: CoroutineScope {
             "这一小时做了什么呢",
             "在做什么呢？"
           )
-          val listener = waitMessage(subject) {
-            val msg = message.contentToString()
-            if (msg.contains(Regex("什么都没做|什么也没做|摸鱼"))) {
-              activities[now - 1] = "摸鱼"
-              subject.sendMessageIn("啊这", "这样啊")
-              subject.sendMessage("那接下来得加油咯")
-            } else if (msg.contains(Regex("色色|打飞机|撸管|手冲"))) {
+          select<Unit> {
+            nextMessageAsync(subject).onAwait {
+              val msg = it.message.contentToString().trimStart('在')
               activities[now - 1] = msg
-              subject.sendMessageIn("啧", "嘶")
-              subject.sendMessage("那不打扰你了")
-              subject.sendMessage("玩得愉快hhh")
-            } else {
-              activities[now - 1] = msg
-              subject.sendMessageIn("不错嘛", "可以")
-              subject.sendMessageIn(
-                "休息一下再继续吧",
-                "继续之前，给自己一点放松时间吧"
-              )
+              if (msg.contains(Regex("什么都没做|什么也没做|摸鱼"))) {
+                activities[now - 1] = "摸鱼"
+                subject.sendMessageIn("啊这", "这样啊")
+                subject.sendMessage("那接下来得加油咯")
+              } else if (msg.contains(Regex("午休|休息"))) {
+                subject.sendMessage("休息得好吗？")
+                subject.sendMessage("恢复精力之后就继续工作吧")
+              } else if (msg.contains(Regex("色色|打飞机|撸管|手冲"))) {
+                subject.sendMessageIn("啧", "嘶")
+                subject.sendMessage("那不打扰你了")
+                subject.sendMessage("玩得愉快hhh")
+              } else {
+                subject.sendMessageIn("不错嘛", "可以")
+                subject.sendMessageIn(
+                  "休息一下再继续吧",
+                  "继续之前，给自己一点放松时间吧"
+                )
+              }
             }
-          }
-          delay(5.minutes)
-          if (listener.complete()) {
-            subject.sendMessage("还在忙吗……")
-            subject.sendMessage("那不打扰你了")
-            subject.sendMessage("不过，最好还是休息一下")
+            onTimeout(300_000) {
+              subject.sendMessage("还在忙吗……")
+              subject.sendMessage("那不打扰你了")
+              subject.sendMessage("不过，最好还是休息一下")
+            }
           }
         }
       }
