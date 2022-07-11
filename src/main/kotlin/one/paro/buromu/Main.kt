@@ -3,16 +3,13 @@ package one.paro.buromu
 import net.mamoe.mirai.console.plugin.jvm.JvmPluginDescription
 import net.mamoe.mirai.console.plugin.jvm.KotlinPlugin
 
-object Core: KotlinPlugin(JvmPluginDescription.loadFromResource()) {
-  private val alarm = HourAlarm()
-  private val throttler = Throttler()
-
+object Main: KotlinPlugin(JvmPluginDescription.loadFromResource()) {
   override fun onEnable() {
-    alarm.onEnable()
-    throttler.onEnable()
+    Throttler.onEnable()
+    Alarm.onEnable()
   }
 
   override fun onDisable() {
-    alarm.onDisable()
+    Alarm.onDisable()
   }
 }

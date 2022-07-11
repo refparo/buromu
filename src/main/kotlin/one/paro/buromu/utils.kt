@@ -20,6 +20,6 @@ suspend fun User.sendMessageIn(
 
 fun CoroutineScope.nextMessageAsync(from: User) =
   async(coroutineContext) {
-    Core.globalEventChannel()
+    globalEventChannel()
       .nextEvent<UserMessageEvent> { it.subject == from }
   }
