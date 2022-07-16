@@ -7,6 +7,7 @@ object Main: KotlinPlugin(JvmPluginDescription.loadFromResource()) {
   override fun onEnable() {
     Throttler.onEnable()
     Alarm.onEnable()
+    ServerStatus.onEnable()
   }
 
   override fun onDisable() {
