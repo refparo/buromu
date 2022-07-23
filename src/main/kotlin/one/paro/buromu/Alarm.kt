@@ -21,6 +21,8 @@ import net.mamoe.mirai.event.EventPriority
 import net.mamoe.mirai.event.globalEventChannel
 import net.mamoe.mirai.event.subscribeFriendMessages
 
+import one.paro.buromu.ChatState.Companion.filterState
+import one.paro.buromu.ChatState.Companion.withState
 import one.paro.buromu.Main.reload
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -69,6 +71,21 @@ object Alarm: CoroutineScope by Main {
     var needWakeUp = true
     var startOfDay = 9
     var endOfDay = 21
+
+    fun reset() {
+      noDisturb = false
+      tasks.clear()
+      activities.clear()
+      assessment = null
+    }
+    fun import(day: UserDay) {
+      noDisturb = day.noDisturb
+      tasks.addAll(day.tasks)
+      activities.putAll(day.activities)
+      assessment = null
+    }
+    fun export() =
+      UserDay(false, tasks.toSet(), activities.toMap(), assessment)
   }
   @Serializable
   private data class UserDay(
@@ -77,6 +94,8 @@ object Alarm: CoroutineScope by Main {
     val activities: Map<Int, String>,
     val assessment: String?
   )
+
+  private object State: ChatState
 
   fun onEnable() {
     Data.reload()
@@ -92,7 +111,7 @@ object Alarm: CoroutineScope by Main {
       )
     }
 
-    globalEventChannel().subscribeFriendMessages(
+    globalEventChannel().filterState(null).subscribeFriendMessages(
       priority = EventPriority.NORMAL
     ) {
       contains("帮我管理时间") {
@@ -286,15 +305,14 @@ object Alarm: CoroutineScope by Main {
   }
 
   private val timer = Timer()
-  private val task = object: TimerTask() {
-    override fun run() {
-      val now = LocalTime.now().hour
-      Data.forEach { (subject, data) -> launch { when (now) {
+  private val task = object: TimerTask() { override fun run() {
+    val now = LocalTime.now().hour
+    Data.forEach { (subject, data) -> launch { subject.withState(State) {
+      when (now) {
         data.startOfDay -> {
-          data.calendar[LocalDate.now().toString()]?.let {
-            data.noDisturb = it.noDisturb
-            data.tasks.addAll(it.tasks)
-          }
+          data.calendar[LocalDate.now().toString()]
+            ?.let { data.import(it) }
+            ?: data.reset()
           subject.sendMessageIn(
             "该干活啦！",
             "工作时间到了！"
@@ -483,20 +501,12 @@ object Alarm: CoroutineScope by Main {
             }
           }
           subject.sendMessage("晚安")
-          data.calendar[LocalDate.now().toString()] =
-            UserDay(
-              false,
-              data.tasks.toSet(),
-              data.activities.toMap(),
-              data.assessment
-            )
-          data.tasks.clear()
-          data.activities.clear()
-          data.assessment = null
+          data.calendar[LocalDate.now().toString()] = data.export()
+          data.reset()
         }
-      } } }
-    }
-  }
+      }
+    } } }
+  } }
 
   fun onDisable() {
     timer.cancel()
