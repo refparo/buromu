@@ -10,17 +10,29 @@ import net.mamoe.mirai.event.events.MessageEvent
 
 interface ChatState {
   companion object: CoroutineScope by Main {
+    private val logger = Main.logger.derive(this::class)
+
     private val states = mutableMapOf<Contact, KClass<out ChatState>>()
 
     fun Contact.getState() = states[this]
 
     fun Contact.switch(state: KClass<out ChatState>?) {
-      if (state == null) states.remove(this)
-      else states[this] = state
+      if (state == null) {
+        states.remove(this)
+        logger.info("${this.id} switched out of any state")
+      } else {
+        states[this] = state
+        logger.info("${this.id} switched into state ${state.qualifiedName}")
+      }
     }
     fun Contact.switch(state: ChatState?) {
-      if (state == null) states.remove(this)
-      else states[this] = state::class
+      if (state == null) {
+        states.remove(this)
+        logger.info("${this.id} switched out of any state")
+      } else {
+        states[this] = state::class
+        logger.info("${this.id} switched into state ${state::class.qualifiedName}")
+      }
     }
 
     inline fun <T> Contact.withState(state: ChatState?, block: () -> T): T {
