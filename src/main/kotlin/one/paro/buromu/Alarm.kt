@@ -17,9 +17,7 @@ import net.mamoe.mirai.console.data.AutoSavePluginData
 import net.mamoe.mirai.console.data.value
 import net.mamoe.mirai.contact.Friend
 import net.mamoe.mirai.contact.User
-import net.mamoe.mirai.event.EventPriority
-import net.mamoe.mirai.event.globalEventChannel
-import net.mamoe.mirai.event.subscribeFriendMessages
+import net.mamoe.mirai.event.*
 
 import one.paro.buromu.ChatState.Companion.filterState
 import one.paro.buromu.ChatState.Companion.withState
@@ -114,8 +112,7 @@ object Alarm: CoroutineScope by Main {
     globalEventChannel().filterState(null).subscribeFriendMessages(
       priority = EventPriority.NORMAL
     ) {
-      contains("帮我管理时间") {
-        if (it.contains(Regex("(不用|不要|别)帮我管理时间"))) return@contains
+      matching(Regex("帮我管理时间.*")) {
         if (Data.contains(subject)) {
           subject.sendMessage("我已经在帮你了")
         } else {
@@ -127,7 +124,7 @@ object Alarm: CoroutineScope by Main {
           )
         }
       }
-      finding(Regex("(不用|不要|别)帮我管理时间")) {
+      matching(Regex("(不用|不要|别)帮我管理时间.*")) {
         if (Data.contains(subject)) {
           Data.remove(subject)
           subject.sendMessage("好吧")
@@ -139,8 +136,8 @@ object Alarm: CoroutineScope by Main {
           subject.sendMessage("我怎么不记得你有叫我帮过你")
         }
       }
-      finding(Regex("""我的工作时间是(\d{1,2})点到(\d{1,2})点""")) {
-        val data = Data[subject] ?: return@finding
+      matching(Regex("""我的工作时间是(\d{1,2})点到(\d{1,2})点""")) {
+        val data = Data[subject] ?: return@matching
         val start = it.groupValues[1].toInt()
         val end = it.groupValues[2].toInt()
         if (!(0..23).contains(start) || !(0..23).contains(end)) {
@@ -304,9 +301,12 @@ object Alarm: CoroutineScope by Main {
     }
   }
 
+  class Event(val now: Int): AbstractEvent()
+
   private val timer = Timer()
   private val task = object: TimerTask() { override fun run() {
     val now = LocalTime.now().hour
+    launch { Event(now).broadcast() }
     Data.forEach { (subject, data) -> launch { subject.withState(State) {
       when (now) {
         data.startOfDay -> {
@@ -350,7 +350,7 @@ object Alarm: CoroutineScope by Main {
             subject.sendMessage("别忘了今天要${data.tasks.joinToString("、")}")
         }
         in data.startOfDay until data.endOfDay -> {
-          if (data.noDisturb) return@launch
+          if (data.noDisturb) return@withState
           if (
             data.activities.containsKey(now - 1) &&
             data.activities[now - 1] != data.activities[now]
