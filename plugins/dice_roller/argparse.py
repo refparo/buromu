@@ -1,5 +1,6 @@
 from dataclasses import dataclass, replace
 import re
+from typing import Final
 
 
 @dataclass
@@ -41,7 +42,7 @@ class Break(Exception):
   pass
 
 
-option_regex = re.compile(r"(?:^|\s+)((--?)([^-]*$))")
+option_regex: Final = re.compile(r"(?:^|\s+)((--?)([^-]*$))")
 
 
 def parse_args(args: str):

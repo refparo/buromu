@@ -533,7 +533,7 @@ class Count(Evaluatable):
         yield from self.cond.format(ctx)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Binary(Evaluatable):
   class Operator(Enum):
     PLUS = "+"
@@ -593,7 +593,7 @@ class Binary(Evaluatable):
       yield from self.rhs.format(ctx)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Neg(Evaluatable):
   inner: Evaluatable
 
@@ -618,7 +618,7 @@ class Neg(Evaluatable):
       yield from self.inner.format(ctx)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Pow(Evaluatable):
   lhs: Evaluatable
   rhs: Evaluatable
