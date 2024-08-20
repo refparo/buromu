@@ -54,6 +54,8 @@ config: Final = nb.get_plugin_config(Config)
 
 gen = np.random.Generator(np.random.SFC64())
 
+full_help_res_id: str | None = None
+
 on_roll = nb.on_command("roll", aliases={"r"}, block=True)
 
 
@@ -61,6 +63,7 @@ on_roll = nb.on_command("roll", aliases={"r"}, block=True)
 async def roll(
   bot: nba.Bot, evt: nba.Event, arg: nba.Message = nbp.CommandArg()
 ):
+  global full_help_res_id
   if not all(seg.is_text() for seg in arg):
     await on_roll.finish("不要在掷骰命令里夹杂非文本内容！需要帮助请用 .r -h")
   # begin parse args
@@ -202,9 +205,13 @@ async def roll(
     case Help(full):
       if full:
         if isinstance(evt, ob11.GroupMessageEvent):
-          res_id = await bot.call_api(
-            "send_forward_msg", messages=full_help_forward_msg
-          )
+          if full_help_res_id is None:
+            res_id = await bot.call_api(
+              "send_forward_msg", messages=full_help_forward_msg
+            )
+            full_help_res_id = res_id
+          else:
+            res_id = full_help_res_id
           await on_roll.finish(ob11.MessageSegment.forward(res_id))
         else:
           for seg in full_help:
