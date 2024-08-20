@@ -3,8 +3,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
-type Span = tuple[int, int]
-
 type Token = Simple | Number | Unknown
 
 
@@ -25,7 +23,7 @@ class Simple:
     R = "r"
     RR = "rr"
     BANG = "!"
-    QUERY = "?"
+    COUNT = "#"
     UNIQ = "uniq"
     COMMA = ","
     COLON = ":"
@@ -43,7 +41,6 @@ class Simple:
     DUPMAX = "dupmax"
     H = "h"
     L = "l"
-    TRUE = "true"
     AND = "&"
     OR = "|"
     XOR = "^"
@@ -56,18 +53,18 @@ class Simple:
     RBRACE = "}"
 
   kind: Kind
-  span: Span
+  span: slice
 
 
 @dataclass(frozen=True)
 class Number:
   value: int
-  span: Span
+  span: slice
 
 
 @dataclass(frozen=True)
 class Unknown:
-  pos: int
+  span: slice
 
 
 possible_lengths: Final = sorted(
@@ -97,7 +94,7 @@ class Lexer:
         raise StopIteration
     if (number := number_regex.match(self.source, self.cursor)) is not None:
       self.cursor = number.end()
-      return Number(int(number.group()), number.span())
+      return Number(int(number.group()), slice(*number.span()))
     remaining_length = len(self.source) - self.cursor
     for length in possible_lengths:
       if length > remaining_length:
@@ -110,7 +107,7 @@ class Lexer:
     else:
       pos = self.cursor
       self.cursor += 1
-      return Unknown(pos)
-    span = (self.cursor, self.cursor + length)
-    self.cursor = span[1]
+      return Unknown(slice(pos, self.cursor))
+    span = slice(self.cursor, self.cursor + length)
+    self.cursor = span.stop
     return Simple(kind, span)

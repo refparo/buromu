@@ -25,6 +25,12 @@ class Peekable[T]:
       return self.inner.__next__()
 
   def put_back(self, this: T):
+    """
+    Note that this is unchecked: if this `Peekable` already has a `next`,
+    it will be silently discarded!
+
+    One should only use this after a call of `next`, before any call of `peek`s.
+    """
     self.has_next = True
     self.next = this
 

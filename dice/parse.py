@@ -1,31 +1,33 @@
 from dataclasses import dataclass, replace
-from typing import TypeAliasType
+from typing import Any, Final, TypeAliasType, cast
+
+import numpy as np
 
 from utils.peekable import Peekable
 
 from .expr import (
+  DF,
+  DX,
+  AtomCond,
   Binary,
   BinaryCond,
   Coin,
   Combine,
   Compare,
   Cond,
-  CountCond,
-  DFace,
+  Const,
+  Count,
+  CountingCond,
   DFaces,
-  DFate,
-  Die,
-  DModFace,
-  Expr,
-  Faces,
+  DModX,
+  Evaluatable,
   Filter,
   Neg,
   Not,
-  Pool,
   Pow,
   Repeat,
-  SignedNumber,
-  SimpleCond,
+  Rollable,
+  SingleDie,
   Unique,
 )
 from .token import Number, Simple, Token
@@ -42,7 +44,7 @@ class ExpectError(Exception):
 # but raise an ExpectError expecting the whole subexpression (not prefixes)
 
 
-def parse_expr(lex: Peekable[Token], prev_prec: int = 0) -> Expr[Pool]:
+def parse_expr(lex: Peekable[Token], prev_prec: int = 0) -> Evaluatable:
   """
   Expr -> PlusExpr
   PlusExpr ->
@@ -53,16 +55,9 @@ def parse_expr(lex: Peekable[Token], prev_prec: int = 0) -> Expr[Pool]:
     | MultExpr * MultExpr
     | MultExpr / MultExpr
     | MultExpr % MultExpr
-    | AtomExpr
-
-  :raises: ExpectError(Expr), ExpectError(Pool), ExpectError(Faces),
-    ExpectError(Cond),
-    ExpectError((Number, Simple.Kind.LBRACE)),
-    ExpectError((Simple.Kind.COMMA, Simple.Kind.RBRACE)),
-    ExpectError(Simple.Kind.RPAR),
-    ExpectError(SignedNumber), ExpectError(Number)
+    | UnaryExpr
   """
-  lhs = parse_atom_expr(lex)
+  lhs = parse_unary_expr(lex)
   while isinstance(tok := lex.peek(None), Simple):
     try:
       op = Binary.Operator[tok.kind.name]
@@ -73,169 +68,204 @@ def parse_expr(lex: Peekable[Token], prev_prec: int = 0) -> Expr[Pool]:
       break
     next(lex)
     rhs = parse_expr(lex, prec)
-    lhs: Expr[Pool] = Binary(op, lhs, rhs, (lhs.span[0], rhs.span[1]))
+    lhs = Binary(op, lhs, rhs)
   return lhs
 
 
-def parse_atom_expr(lex: Peekable[Token]) -> Expr[Pool]:
+def parse_unary_expr(lex: Peekable[Token]) -> Evaluatable:
   """
-  AtomExpr ->
-    | - AtomExpr
-    | ( Expr )
-    | Pool
-    | AtomExpr ** Number
-
-  :raises: ExpectError(Expr), ExpectError(Pool), ExpectError(Faces),
-    ExpectError(Cond),
-    ExpectError((Number, Simple.Kind.LBRACE)),
-    ExpectError((Simple.Kind.COMMA, Simple.Kind.RBRACE)),
-    ExpectError(Simple.Kind.RPAR),
-    ExpectError(SignedNumber), ExpectError(Number)
+  UnaryExpr ->
+    | - UnaryExpr
+    | AtomExpr
   """
   match lex.peek(None):
-    case Simple(Simple.Kind.MINUS, (left, _)):
+    case Simple(Simple.Kind.MINUS, _):
       next(lex)
       expr = parse_atom_expr(lex)
-      lhs = Neg(expr, (left, expr.span[1]))
-    case Simple(Simple.Kind.LPAR, (left, _)):
+      return Neg(expr)
+    case _:
+      return parse_atom_expr(lex)
+
+
+def parse_atom_expr(lex: Peekable[Token]) -> Evaluatable:
+  """
+  AtomExpr ->
+    | ( Expr )
+    | Pool (# Cond?)?
+    | AtomExpr ** UnaryExpr
+  """
+  match lex.peek(None):
+    case Simple(Simple.Kind.LPAR, _):
       next(lex)
       expr = parse_expr(lex)
-      match lex.peek(None):
-        case Simple(Simple.Kind.RPAR, (_, right)):
-          next(lex)
-          lhs = replace(expr, span=(left, right))
+      match next(lex, None):
+        case Simple(Simple.Kind.RPAR, _):
+          lhs = expr
         case tok:
+          if tok is not None:
+            lex.put_back(tok)
           raise ExpectError(Simple.Kind.RPAR, tok)
     case tok:
       try:
         lhs = parse_pool(lex)
       except ExpectError as ex:
-        if ex.expected == Pool:
-          raise ExpectError(Expr, tok)
+        if ex.expected == Rollable:
+          raise ExpectError(Evaluatable, tok)
         else:
           raise
-  while True:
-    match lex.peek(None):
-      case Simple(Simple.Kind.POW, _):
-        next(lex)
-        match lex.peek(None):
-          case Number(_, (_, right)) as exp:
-            next(lex)
-            lhs: Expr[Pool] = Pow(lhs, exp, (lhs.span[0], right))
-          case tok:
-            raise ExpectError(Number, tok)
-      case _:
-        break
-  return lhs
+      match lex.peek(None):
+        case Simple(Simple.Kind.COUNT, span):
+          next(lex)
+          try:
+            cond = parse_cond(lex)
+          except ExpectError as ex:
+            if ex.expected == Cond:
+              cond = None
+            else:
+              raise
+          lhs = Count(lhs, cond, span)
+  match lex.peek(None):
+    case Simple(Simple.Kind.POW, _):
+      next(lex)
+      rhs = parse_unary_expr(lex)
+      return Pow(lhs, rhs)
+    case _:
+      return lhs
 
 
-
-def parse_pool(lex: Peekable[Token]) -> Pool:
+def parse_pool(lex: Peekable[Token]) -> Rollable:
   """
   Pool ->
     | Pool k Cond
     | Pool d Cond
     | Pool r Cond
     | Pool rr Cond
-    | Pool ? Cond
     | Pool ! Cond?
     | Pool uniq
     | AtomPool
-
-  :raises: ExpectError(Pool), ExpectError(Faces), ExpectError(Cond),
-    ExpectError((Number, Simple.Kind.LBRACE)),
-    ExpectError((Simple.Kind.COMMA, Simple.Kind.RBRACE)),
-    ExpectError(Simple.Kind.RPAR),
-    ExpectError(SignedNumber), ExpectError(Number)
   """
   pool = parse_atom_pool(lex)
   while True:
     match lex.peek(None):
-      case Simple(Simple.Kind.K, _):
+      case Simple(Simple.Kind.K, span):
         op = Filter.Operation.KEEP
-      case Simple(Simple.Kind.D, _):
+      case Simple(Simple.Kind.D, span):
         op = Filter.Operation.DROP
-      case Simple(Simple.Kind.R, _):
+      case Simple(Simple.Kind.R, span):
         op = Filter.Operation.REROLL_ONCE
-      case Simple(Simple.Kind.RR, _):
+      case Simple(Simple.Kind.RR, span):
         op = Filter.Operation.REROLL
-      case Simple(Simple.Kind.QUERY, _):
-        op = Filter.Operation.TEST
-      case Simple(Simple.Kind.BANG, (_, right)):
+      case Simple(Simple.Kind.BANG, span):
         next(lex)
         op = Filter.Operation.EXPLODE
         try:
-          cond: Cond = parse_cond(lex)
+          cond = parse_cond(lex)
         except ExpectError as ex:
           if ex.expected == Cond:
-            cond: Cond = SimpleCond(SimpleCond.Kind.MAX, (right, right))
+            cond = None
           else:
             raise
-        pool: Pool = Filter(op, pool, cond, (pool.span[0], cond.span[1]))
+        pool = Filter(
+          op,
+          pool,
+          cond,
+          span,
+          slice(pool.span.start, span.stop if cond is None else cond.span.stop),
+        )
         continue
-      case Simple(Simple.Kind.UNIQ, (_, right)):
+      case Simple(Simple.Kind.UNIQ, span):
         next(lex)
-        pool: Pool = Unique(pool, (pool.span[0], right))
+        pool = Unique(pool, span)
         continue
       case _:
         return pool
     next(lex)
-    cond: Cond = parse_cond(lex)
-    pool: Pool = Filter(op, pool, cond, (pool.span[0], cond.span[1]))
-    # do not remove these type hints: pyright will freeze without them!
+    cond = parse_cond(lex)
+    pool = Filter(op, pool, cond, span, slice(pool.span.start, cond.span.stop))
 
 
-def parse_atom_pool(lex: Peekable[Token]) -> Pool:
+def parse_atom_pool(lex: Peekable[Token]) -> Rollable:
   """
   AtomPool ->
     | Die
     | SignedNumber
     | Number Die
-    | { Pool (, Pool)* }
-
-  :raises: ExpectError(Pool), ExpectError(Faces), ExpectError(Cond),
-    ExpectError((Number, Simple.Kind.LBRACE)),
-    ExpectError((Simple.Kind.COMMA, Simple.Kind.RBRACE)),
-    ExpectError(Simple.Kind.RPAR),
-    ExpectError(SignedNumber), ExpectError(Number)
+    | [ Pool (, Pool)* ]
   """
   match lex.peek(None):
-    case Simple(Simple.Kind.PLUS | Simple.Kind.MINUS, _):
+    case Simple(Simple.Kind.PLUS | Simple.Kind.MINUS, _) as tok:
       return parse_signed_number(lex)
-    case Number(_, (left, _) as span) as number:
+    case Number(value, span) as number:
       next(lex)
       try:
         die = parse_die(lex)
-        return Repeat(die, number, (left, die.span[1]))
+        return Repeat(number.value, die, slice(span.start, die.span.stop))
       except ExpectError as ex:
-        if ex.expected == Die:
-          return SignedNumber(False, number, span)
+        if ex.expected == SingleDie:
+          return Const(value, span)
         else:
           raise
-    case Simple(Simple.Kind.LBRACE, (left, _)):
+    case Simple(Simple.Kind.LBRACKET, left):
       next(lex)
-      pools: list[Pool] = [parse_pool(lex)]
+      pools = [parse_pool(lex)]
       while True:
-        match lex.peek(None):
+        match next(lex, None):
           case Simple(Simple.Kind.COMMA, _):
-            next(lex)
             pools.append(parse_pool(lex))
-          case Simple(Simple.Kind.RBRACE, (_, right)):
-            next(lex)
-            return Combine(pools, (left, right))
+          case Simple(Simple.Kind.RBRACKET, right):
+            return Combine(pools, slice(left.start, right.stop))
           case tok:
-            raise ExpectError((Simple.Kind.COMMA, Simple.Kind.RBRACE), tok)
+            if tok is not None:
+              lex.put_back(tok)
+            raise ExpectError((Simple.Kind.COMMA, Simple.Kind.RBRACKET), tok)
     case tok:
       try:
         return parse_die(lex)
       except ExpectError as ex:
-        if ex.expected == Die:
-          raise ExpectError(Pool, tok)
+        if ex.expected == SingleDie:
+          raise ExpectError(Rollable, tok)
         else:
           raise
 
 
-def parse_die(lex: Peekable[Token]) -> Die:
+@dataclass(frozen=True)
+class Faces:
+  start: int
+  stop: int | None  # stop = None means that this is a single face
+  step: int
+  repeat: int
+  span: slice
+
+  def count(self):
+    if self.stop is None:
+      return self.repeat
+    else:
+      return (self.stop - self.start + self.step - 1) // self.step * self.repeat
+
+  def to_array(self):
+    if self.stop is None:
+      return np.full(self.repeat, self.start, dtype=np.int64)
+    else:
+      return np.tile(
+        np.arange(self.start, self.stop, self.step, dtype=np.int64),
+        self.repeat,
+      )
+
+
+@dataclass(frozen=True)
+class ZeroFacedDie(Exception):
+  span: slice
+
+
+@dataclass(frozen=True)
+class TooManyFaces(Exception):
+  span: slice
+
+
+faces_limit: Final[np.int64] = np.int64(1 << 17)
+
+
+def parse_die(lex: Peekable[Token]) -> SingleDie:
   """
   Die ->
     | d Number
@@ -243,77 +273,107 @@ def parse_die(lex: Peekable[Token]) -> Die:
     | d% Number
     | df
     | c
-
-  :raises: ExpectError(Die), ExpectError(Faces),
-    ExpectError(SignedNumber), ExpectError(Number),
-    ExpectError((Number, Simple.Kind.LBRACE)),
-    ExpectError((Simple.Kind.COMMA, Simple.Kind.RBRACE))
   """
-  match lex.peek(None):
-    case Simple(Simple.Kind.D, (left, _)):
-      next(lex)
-      match lex.peek(None):
-        case Number(_, (_, right)) as number:
-          next(lex)
-          return DFace(number, (left, right))
+  match next(lex, None):
+    case Simple(Simple.Kind.D, left):
+      match next(lex, None):
+        case Number(value, right):
+          span = slice(left.start, right.stop)
+          if value == 0:
+            raise ZeroFacedDie(span)
+          elif value == 1:
+            return Const(1, span)
+          elif value > np.iinfo(np.int64).max:
+            raise TooManyFaces(span)
+          else:
+            return DX(value, span)
         case Simple(Simple.Kind.LBRACE, _):
-          next(lex)
-          faces = [parse_faces(lex)]
+          face_count = 0
+          arrs = []
           while True:
-            match lex.peek(None):
+            faces = parse_faces(lex)
+            if left is None:
+              left = faces.span
+            right = faces.span
+            face_count += faces.count()
+            if face_count > faces_limit:
+              raise TooManyFaces(slice(left.start, right.stop))
+            arrs.append(faces.to_array())
+            match next(lex, None):
               case Simple(Simple.Kind.COMMA, _):
-                next(lex)
-                faces.append(parse_faces(lex))
-              case Simple(Simple.Kind.RBRACE, (_, right)):
-                next(lex)
-                return DFaces(faces, (left, right))
+                pass
+              case Simple(Simple.Kind.RBRACE, right):
+                span = slice(left.start, right.stop)
+                if face_count == 0:
+                  raise ZeroFacedDie(span)
+                elif face_count == 1:
+                  return Const(int(arrs[0][0]), span)
+                else:
+                  return DFaces(np.concat(arrs), span)
               case tok:
+                if tok is not None:
+                  lex.put_back(tok)
                 raise ExpectError((Simple.Kind.COMMA, Simple.Kind.RBRACE), tok)
         case tok:
+          if tok is not None:
+            lex.put_back(tok)
           raise ExpectError((Number, Simple.Kind.LBRACE), tok)
-    case Simple(Simple.Kind.DMOD, (left, _)):
-      next(lex)
-      match lex.peek(None):
-        case Number(_, (_, right)) as number:
-          next(lex)
-          return DModFace(number, (left, right))
+    case Simple(Simple.Kind.DMOD, left):
+      match next(lex):
+        case Number(value, right):
+          span = slice(left.start, right.stop)
+          if value == 0:
+            return Const(0, span)
+          elif value > np.iinfo(np.int64).max:
+            raise TooManyFaces(span)
+          else:
+            return DModX(value, span)
         case tok:
+          if tok is not None:
+            lex.put_back(tok)
           raise ExpectError(Number, tok)
     case Simple(Simple.Kind.DF, span):
-      next(lex)
-      return DFate(span)
+      return DF(span)
     case Simple(Simple.Kind.C, span):
-      next(lex)
       return Coin(span)
     case tok:
-      raise ExpectError(Die, tok)
+      if tok is not None:
+        lex.put_back(tok)
+      raise ExpectError(SingleDie, tok)
+
+
+@dataclass(frozen=True)
+class InfiniteFaces(Exception):
+  span: slice
 
 
 def parse_faces(lex: Peekable[Token]) -> Faces:
   """
   Faces -> SignedNumber (.. SignedNumber)? (.. SignedNumber)? (: Number)?
-
-  :raises: ExpectError(Faces), ExpectError(SignedNumber), ExpectError(Number)
   """
   try:
-    start = parse_signed_number(lex)
+    match parse_signed_number(lex):
+      case Const(start, left):
+        pass
   except ExpectError as ex:
-    if ex.expected == SignedNumber:
+    if ex.expected == Const:
       raise ExpectError(Faces, ex.got)
     else:
       raise
-  right = start.span[1]
+  right = left
   match lex.peek(None):
     case Simple(Simple.Kind.RANGE, _):
       next(lex)
-      stop = parse_signed_number(lex)
-      right = stop.span[1]
+      match parse_signed_number(lex):
+        case Const(stop, right):
+          pass
       match lex.peek(None):
         case Simple(Simple.Kind.RANGE, _):
           next(lex)
           step = stop
-          stop = parse_signed_number(lex)
-          right = stop.span[1]
+          match parse_signed_number(lex):
+            case Const(stop, right):
+              pass
         case _:
           step = None
     case _:
@@ -322,15 +382,28 @@ def parse_faces(lex: Peekable[Token]) -> Faces:
   match lex.peek(None):
     case Simple(Simple.Kind.COLON, _):
       next(lex)
-      match lex.peek(None):
-        case Number(_, (_, right)) as number:
-          next(lex)
-          repeat = number
+      match next(lex, None):
+        case Number(repeat, right):
+          pass
         case tok:
+          if tok is not None:
+            lex.put_back(tok)
           raise ExpectError(Number, tok)
     case _:
-      repeat = None
-  return Faces(start, step, stop, repeat, (start.span[0], right))
+      repeat = 1
+  span = slice(left.start, right.stop)
+  if stop is None or stop == start:
+    return Faces(start, None, 1, repeat, span)
+  else:
+    sign = int(np.sign(stop - start))
+    stop = stop + sign
+    if step is None:
+      step = sign
+    else:
+      step -= start
+    if step * sign <= 0:
+      raise InfiniteFaces(span)
+    return Faces(start, stop, step, repeat, span)
 
 
 def parse_cond(lex: Peekable[Token], prev_prec: int = 0) -> Cond:
@@ -357,7 +430,7 @@ def parse_cond(lex: Peekable[Token], prev_prec: int = 0) -> Cond:
       break
     next(lex)
     rhs = parse_cond(lex, prec)
-    lhs = BinaryCond(op, lhs, rhs, (lhs.span[0], rhs.span[1]))
+    lhs = BinaryCond(op, lhs, rhs, slice(lhs.span.start, rhs.span.stop))
   return lhs
 
 
@@ -383,63 +456,63 @@ def parse_atom_cond(lex: Peekable[Token]) -> Cond:
   :raises: ExpectError(Cond), ExpectError(Simple.Kind.RPAR), ExpectError(Number)
   """
   match lex.peek(None):
-    case Simple(kind, (left, _) as span):
+    case Simple(kind, left):
       try:
         comp = Compare.Comparator[kind.name]
         next(lex)
         to = parse_signed_number(lex)
-        return Compare(comp, to, (left, to.span[1]))
+        return Compare(comp, to.value, slice(left.start, to.span.stop))
       except KeyError:
         pass
       try:
-        kind = SimpleCond.Kind[kind.name]
+        kind = AtomCond.Kind[kind.name]
         next(lex)
-        return SimpleCond(kind, span)
+        return AtomCond(kind, left)
       except KeyError:
         pass
       match kind:
         case Simple.Kind.DUP:
-          kind = CountCond.Kind.DUP
+          kind = CountingCond.Kind.DUP
         case Simple.Kind.H:
-          kind = CountCond.Kind.HIGH
+          kind = CountingCond.Kind.HIGH
         case Simple.Kind.L:
-          kind = CountCond.Kind.LOW
+          kind = CountingCond.Kind.LOW
         case _:
           kind = None
       if kind is not None:
         next(lex)
         match lex.peek(None):
-          case Number(_, (_, right)) as count:
+          case Number(count, right):
             next(lex)
-            return CountCond(kind, count, (left, right))
+            return CountingCond(kind, count, slice(left.start, right.stop))
           case _:
-            return CountCond(kind, None, span)
+            return CountingCond(kind, None, left)
   match lex.peek(None):
-    case Simple(Simple.Kind.LPAR, (left, _)):
+    case Simple(Simple.Kind.LPAR, left):
       next(lex)
       cond = parse_cond(lex)
       match lex.peek(None):
-        case Simple(Simple.Kind.RPAR, (_, right)):
+        case Simple(Simple.Kind.RPAR, right):
           next(lex)
-          return replace(cond, span=(left, right))
+          return replace(cast(Any, cond), span=slice(left.start, right.stop))
         case tok:
           raise ExpectError(Simple.Kind.RPAR, tok)
-    case Simple(Simple.Kind.NOT, (left, _)):
+    case Simple(Simple.Kind.NOT, left):
       next(lex)
       cond = parse_atom_cond(lex)
-      return Not(cond, (left, cond.span[1]))
+      return Not(cond, slice(left.start, cond.span.stop))
     case _:
       try:
         to = parse_signed_number(lex)
       except ExpectError as ex:
-        if ex.expected == SignedNumber:
+        if ex.expected == Const:
           raise ExpectError(Cond, ex.got)
         else:
           raise
-      return Compare(Compare.Comparator.EQ, to, to.span)
+      return Compare(Compare.Comparator.EQ, to.value, to.span)
 
 
-def parse_signed_number(lex: Peekable[Token]) -> SignedNumber:
+def parse_signed_number(lex: Peekable[Token]) -> Const:
   """
   SignedNumber ->
     | + Number
@@ -448,21 +521,21 @@ def parse_signed_number(lex: Peekable[Token]) -> SignedNumber:
 
   :raises: ExpectError(SignedNumber), ExpectError(Number)
   """
-  match lex.peek(None):
-    case Simple(Simple.Kind.PLUS, (left, _)):
-      next(lex)
-      sign = False
-    case Simple(Simple.Kind.MINUS, (left, _)):
-      next(lex)
-      sign = True
-    case Number(_, span) as number:
-      next(lex)
-      return SignedNumber(False, number, span)
+  match next(lex, None):
+    case Simple(Simple.Kind.PLUS, left):
+      sign = 1
+    case Simple(Simple.Kind.MINUS, left):
+      sign = -1
+    case Number(value, span):
+      return Const(value, span)
     case tok:
-      raise ExpectError(SignedNumber, tok)
-  match lex.peek(None):
-    case Number(_, (_, right)) as number:
-      next(lex)
-      return SignedNumber(sign, number, (left, right))
+      if tok is not None:
+        lex.put_back(tok)
+      raise ExpectError(Const, tok)
+  match next(lex, None):
+    case Number(value, right):
+      return Const(sign * value, slice(left.start, right.stop))
     case tok:
+      if tok is not None:
+        lex.put_back(tok)
       raise ExpectError(Number, tok)
