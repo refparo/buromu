@@ -382,7 +382,7 @@ full_help_forward_msg: Final = [
     "type": "node",
     "data": {
       "name": "Buromu",
-      "uin": "1590667818",
+      "uin": config.bot_uin,
       "content": [ob11.MessageSegment.text(seg)],
     },
   }
