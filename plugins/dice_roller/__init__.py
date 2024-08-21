@@ -3,13 +3,11 @@ import textwrap
 import traceback
 from typing import Final, assert_never, cast
 
-import nonebot as nb
-import nonebot.adapters as nba
 import nonebot.adapters.onebot.v11 as ob11
-import nonebot.params as nbp
 import numpy as np
 from pydantic import BaseModel
 
+import nb
 from dice.dice import Const
 from dice.expr import (
   Cond,
@@ -61,7 +59,7 @@ on_roll = nb.on_command("roll", aliases={"r"}, block=True)
 
 @on_roll.handle()
 async def roll(
-  bot: nba.Bot, evt: nba.Event, arg: nba.Message = nbp.CommandArg()
+  bot: nb.Bot, evt: nb.Event, arg: nb.Message = nb.params.CommandArg()
 ):
   global full_help_res_id
   if not all(seg.is_text() for seg in arg):
@@ -170,7 +168,7 @@ async def roll(
           note = ""
         case tok:
           note = args.expr[tok.span.start :].strip()
-      msg: list[nba.Message | str]
+      msg: list[nb.Message | str]
       if isinstance(evt, ob11.GroupMessageEvent):
         at_user = ob11.MessageSegment.at(evt.get_user_id())
         if len(note) != 0:

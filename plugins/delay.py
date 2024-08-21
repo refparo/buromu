@@ -1,15 +1,14 @@
 import asyncio as aio
-from datetime import datetime, timedelta
 import math
+from datetime import datetime, timedelta
 from typing import Any, Final
 
-import nonebot as nb
-import nonebot.adapters as nba
 import nonebot.adapters.console as console
 import nonebot.adapters.onebot.v11 as ob11
-import nonebot.message as nbm
-import nonechat.message as ncm
+import nonechat.message
 from pydantic import BaseModel
+
+import nb
 
 
 class Config(BaseModel):
@@ -22,8 +21,8 @@ config: Final = nb.get_plugin_config(Config)
 next_moment_to_start_typing = datetime.now()
 
 
-@nbm.event_preprocessor
-async def read_msg(event: nba.Event):
+@nb.msg.event_preprocessor
+async def read_msg(event: nb.Event):
   global next_moment_to_start_typing
   if event.get_type() == "message":
     reading_time = len(event.get_plaintext()) / config.reading_speed_cps
@@ -40,8 +39,8 @@ onebot11_send_msg_api_names: Final = {
 }
 
 
-@nba.Bot.on_calling_api
-async def typing_delay(bot: nba.Bot, api: str, data: dict[str, Any]):
+@nb.Bot.on_calling_api
+async def typing_delay(bot: nb.Bot, api: str, data: dict[str, Any]):
   global next_moment_to_start_typing
   now = datetime.now()
   msg_len: int
@@ -50,7 +49,7 @@ async def typing_delay(bot: nba.Bot, api: str, data: dict[str, Any]):
       if api != "send_msg":
         return
       match data["message"]:
-        case ncm.ConsoleMessage() as msg:
+        case nonechat.message.ConsoleMessage() as msg:
           msg_len = len(str(msg))
         case msg:
           assert False, f"unsupported message type: {type(msg)}"
@@ -60,7 +59,7 @@ async def typing_delay(bot: nba.Bot, api: str, data: dict[str, Any]):
       match data["message"]:
         case str(msg):
           msg_len = len(msg)
-        case nba.Message() as msg:
+        case nb.Message() as msg:
           msg_len = len(msg.extract_plain_text())
         case msg:
           assert False, f"unsupported message type: {type(msg)}"
