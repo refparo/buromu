@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
+import numpy as np
+
 type Token = Simple | Number | Unknown
 
 
@@ -58,12 +60,17 @@ class Simple:
 
 @dataclass(frozen=True)
 class Number:
-  value: int
+  value: np.int64
   span: slice
 
 
 @dataclass(frozen=True)
 class Unknown:
+  span: slice
+
+
+@dataclass(frozen=True)
+class NumberOverflow(Exception):
   span: slice
 
 
@@ -94,7 +101,11 @@ class Lexer:
         raise StopIteration
     if (number := number_regex.match(self.source, self.cursor)) is not None:
       self.cursor = number.end()
-      return Number(int(number.group()), slice(*number.span()))
+      span = slice(*number.span())
+      try:
+        return Number(np.int64(number.group()), span)
+      except OverflowError:
+        raise NumberOverflow(span)
     remaining_length = len(self.source) - self.cursor
     for length in possible_lengths:
       if length > remaining_length:

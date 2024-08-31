@@ -27,7 +27,7 @@ from dice.parse import (
   ZeroFacedDie,
   parse_expr,
 )
-from dice.token import Lexer, Number, Simple, Unknown
+from dice.token import Lexer, Number, NumberOverflow, Simple, Unknown
 from utils.peekable import Peekable
 
 from .argparse import (
@@ -96,6 +96,10 @@ async def roll(
       # begin parse_expr
       try:
         expr = parse_expr(lex)
+      except NumberOverflow as ex:
+        await on_roll.finish(
+          f"是什么游戏需要“{args.expr[ex.span]}”那么大的数字？"
+        )
       except ExpectError as ex:
         match ex.got:
           case None:

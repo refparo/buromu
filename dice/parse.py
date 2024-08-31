@@ -230,9 +230,9 @@ def parse_atom_pool(lex: Peekable[Token]) -> Rollable:
 
 @dataclass(frozen=True)
 class Faces:
-  start: int
-  stop: int | None  # stop = None means that this is a single face
-  step: int
+  start: np.int64
+  stop: np.int64 | None  # stop = None means that this is a single face
+  step: np.int64
   repeat: int
   span: slice
 
@@ -282,14 +282,12 @@ def parse_die(lex: Peekable[Token]) -> SingleDie:
           if value == 0:
             raise ZeroFacedDie(span)
           elif value == 1:
-            return Const(1, span)
-          elif value > np.iinfo(np.int64).max:
-            raise TooManyFaces(span)
+            return Const(value, span)
           else:
             return DX(value, span)
         case Simple(Simple.Kind.LBRACE, _):
           face_count = 0
-          arrs = []
+          arrs: list[np.ndarray] = []
           while True:
             faces = parse_faces(lex)
             if left is None:
@@ -307,7 +305,7 @@ def parse_die(lex: Peekable[Token]) -> SingleDie:
                 if face_count == 0:
                   raise ZeroFacedDie(span)
                 elif face_count == 1:
-                  return Const(int(arrs[0][0]), span)
+                  return Const(arrs[0][0], span)
                 else:
                   return DFaces(np.concat(arrs), span)
               case tok:
@@ -323,7 +321,7 @@ def parse_die(lex: Peekable[Token]) -> SingleDie:
         case Number(value, right):
           span = slice(left.start, right.stop)
           if value == 0:
-            return Const(0, span)
+            return Const(value, span)
           elif value > np.iinfo(np.int64).max:
             raise TooManyFaces(span)
           else:
@@ -384,7 +382,7 @@ def parse_faces(lex: Peekable[Token]) -> Faces:
       next(lex)
       match next(lex, None):
         case Number(repeat, right):
-          pass
+          repeat = repeat.item()
         case tok:
           if tok is not None:
             lex.put_back(tok)
@@ -393,9 +391,9 @@ def parse_faces(lex: Peekable[Token]) -> Faces:
       repeat = 1
   span = slice(left.start, right.stop)
   if stop is None or stop == start:
-    return Faces(start, None, 1, repeat, span)
+    return Faces(start, None, np.int64(1), repeat, span)
   else:
-    sign = int(np.sign(stop - start))
+    sign = np.sign(stop - start)
     stop = stop + sign
     if step is None:
       step = sign

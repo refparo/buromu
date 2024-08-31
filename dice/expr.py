@@ -70,7 +70,7 @@ dice_count_limit: Final = int64(1 << 17)
 
 @dataclass(frozen=True)
 class Repeat(RawRollable, TriviallyFormattable):
-  n: int
+  n: int64
   die: "SingleDie"
   span: slice
 
@@ -84,7 +84,7 @@ class Repeat(RawRollable, TriviallyFormattable):
 
   @override
   def roll_raw(self, ctx: RollContext) -> NDArray[int64]:
-    ctx.shape.append(self.n)
+    ctx.shape.append(self.n.item())
     if np.prod(ctx.shape) > dice_count_limit:
       raise TooManyDice(self.span)
     data = self.die.roll_raw(ctx)
@@ -166,9 +166,9 @@ class RolledDice(RawRollable, Evaluatable):
 
 class SingleDie(RawRollable, TriviallyFormattable, ABC):
   @abstractmethod
-  def max(self) -> int: ...
+  def max(self) -> int64: ...
   @abstractmethod
-  def min(self) -> int: ...
+  def min(self) -> int64: ...
 
   @override
   def roll(self, ctx: RollContext) -> "RolledDice":
@@ -187,7 +187,7 @@ class SingleDie(RawRollable, TriviallyFormattable, ABC):
 
 @dataclass(frozen=True)
 class Const(SingleDie):
-  value: int
+  value: int64
   span: slice
 
   @override
@@ -195,17 +195,17 @@ class Const(SingleDie):
     return np.full(ctx.shape, self.value, dtype=int64)
 
   @override
-  def max(self) -> int:
+  def max(self) -> int64:
     return self.value
 
   @override
-  def min(self) -> int:
+  def min(self) -> int64:
     return self.value
 
 
 @dataclass(frozen=True)
 class DX(SingleDie):
-  x: int
+  x: int64
   span: slice
 
   @override
@@ -213,17 +213,17 @@ class DX(SingleDie):
     return ctx.gen.choice(self.x, ctx.shape) + 1
 
   @override
-  def max(self) -> int:
+  def max(self) -> int64:
     return self.x
 
   @override
-  def min(self) -> int:
-    return 1
+  def min(self) -> int64:
+    return int64(1)
 
 
 @dataclass(frozen=True)
 class DModX(SingleDie):
-  x: int
+  x: int64
   span: slice
 
   @override
@@ -231,35 +231,39 @@ class DModX(SingleDie):
     return ctx.gen.choice(self.x, ctx.shape)
 
   @override
-  def max(self) -> int:
+  def max(self) -> int64:
     return self.x - 1
 
   @override
-  def min(self) -> int:
-    return 0
+  def min(self) -> int64:
+    return int64(0)
 
 
 @dataclass
 class DFaces(SingleDie):
   faces: NDArray[int64]
   span: slice
-  _max: int | None = field(default=None, init=False, repr=False, compare=False)
-  _min: int | None = field(default=None, init=False, repr=False, compare=False)
+  _max: int64 | None = field(
+    default=None, init=False, repr=False, compare=False
+  )
+  _min: int64 | None = field(
+    default=None, init=False, repr=False, compare=False
+  )
 
   @override
   def roll_raw(self, ctx: RollContext) -> NDArray[int64]:
     return ctx.gen.choice(self.faces, ctx.shape)
 
   @override
-  def max(self) -> int:
+  def max(self) -> int64:
     if self._max is None:
-      self._max = int(np.max(self.faces))
+      self._max = np.max(self.faces)
     return self._max
 
   @override
-  def min(self) -> int:
+  def min(self) -> int64:
     if self._min is None:
-      self._min = int(np.min(self.faces))
+      self._min = np.min(self.faces)
     return self._min
 
 
@@ -272,12 +276,12 @@ class DF(SingleDie):
     return ctx.gen.choice(3, ctx.shape) - 1
 
   @override
-  def max(self) -> int:
-    return 1
+  def max(self) -> int64:
+    return int64(1)
 
   @override
-  def min(self) -> int:
-    return -1
+  def min(self) -> int64:
+    return int64(-1)
 
 
 @dataclass(frozen=True)
@@ -289,12 +293,12 @@ class Coin(SingleDie):
     return ctx.gen.choice(2, ctx.shape)
 
   @override
-  def max(self) -> int:
-    return 1
+  def max(self) -> int64:
+    return int64(1)
 
   @override
-  def min(self) -> int:
-    return 0
+  def min(self) -> int64:
+    return int64(0)
 
 
 # Pool Operations
@@ -702,7 +706,7 @@ class Compare(Cond, TriviallyFormattable):
     LE = "<="
 
   comp: Comparator
-  to: int
+  to: int64
   span: slice
 
   @override
@@ -825,7 +829,7 @@ class CountingCond(Cond, TriviallyFormattable):
     LOW = "l"
 
   kind: Kind
-  count: int | None
+  count: int64 | None
   span: slice
 
   @override
