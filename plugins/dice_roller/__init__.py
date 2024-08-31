@@ -108,14 +108,17 @@ async def roll(
             error_msg = "表达式中有错误！"
             lookback_limit = 10
             if span.start == 0:
-              error_msg += "开头"
+              error_msg += f"开头不应该是“{args.expr[span]}”，而应该是"
             elif span.start <= lookback_limit:
-              error_msg += f"“{args.expr[:span.start]}”后面"
+              error_msg += (
+                f"“{args.expr[:span.start]}”后面"
+                f"不应该是“{args.expr[span]}”，而应该接"
+              )
             else:
               error_msg += (
                 f"“…{args.expr[span.start - lookback_limit:span.start]}”后面"
+                f"不应该是“{args.expr[span]}”，而应该接"
               )
-            error_msg += f"不应该是“{args.expr[span]}”，而应该接"
         match ex.expected:
           case (*exps, exp_last):
             error_msg += (
