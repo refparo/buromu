@@ -348,7 +348,7 @@ full_help: Final = [
     （……）""",
     """\
     条件 <cond>：
-      <±number>  等于 <±number>
+      <±number>  等于 <±number>（条件可省略时不可带符号）
       = <±number>  等于 <±number>
       > <±number>  大于 <±number>
       >= <±number>  大于等于 <±number>

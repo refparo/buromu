@@ -117,7 +117,7 @@ def parse_atom_expr(lex: Peekable[Token]) -> Evaluatable:
         case Simple(Simple.Kind.COUNT, span):
           next(lex)
           try:
-            cond = parse_cond(lex)
+            cond = parse_cond(lex, optional=True)
           except ExpectError as ex:
             if ex.expected == Cond:
               cond = None
@@ -159,7 +159,7 @@ def parse_pool(lex: Peekable[Token]) -> Rollable:
         next(lex)
         op = Filter.Operation.EXPLODE
         try:
-          cond = parse_cond(lex)
+          cond = parse_cond(lex, optional=True)
         except ExpectError as ex:
           if ex.expected == Cond:
             cond = None
@@ -404,7 +404,7 @@ def parse_faces(lex: Peekable[Token]) -> Faces:
     return Faces(start, stop, step, repeat, span)
 
 
-def parse_cond(lex: Peekable[Token], prev_prec: int = 0) -> Cond:
+def parse_cond(lex: Peekable[Token], prev_prec: int = 0, optional: bool = False) -> Cond:
   """
   Cond -> OrCond
   OrCond ->
@@ -417,7 +417,7 @@ def parse_cond(lex: Peekable[Token], prev_prec: int = 0) -> Cond:
 
   :raises: ExpectError(Cond), ExpectError(Simple.Kind.RPAR), ExpectError(Number)
   """
-  lhs = parse_atom_cond(lex)
+  lhs = parse_atom_cond(lex, optional)
   while isinstance(tok := lex.peek(None), Simple):
     try:
       op = BinaryCond.Operator[tok.kind.name]
@@ -427,12 +427,12 @@ def parse_cond(lex: Peekable[Token], prev_prec: int = 0) -> Cond:
     except KeyError:
       break
     next(lex)
-    rhs = parse_cond(lex, prec)
+    rhs = parse_cond(lex, prec, optional)
     lhs = BinaryCond(op, lhs, rhs, slice(lhs.span.start, rhs.span.stop))
   return lhs
 
 
-def parse_atom_cond(lex: Peekable[Token]) -> Cond:
+def parse_atom_cond(lex: Peekable[Token], optional: bool = False) -> Cond:
   """
   AtomCond ->
     | = SignedNumber
@@ -499,7 +499,11 @@ def parse_atom_cond(lex: Peekable[Token]) -> Cond:
       next(lex)
       cond = parse_atom_cond(lex)
       return Not(cond, slice(left.start, cond.span.stop))
-    case _:
+    case Number(value, span):
+      return Compare(Compare.Comparator.EQ, value, span)
+    case tok:
+      if optional:
+        raise ExpectError(Cond, tok)
       try:
         to = parse_signed_number(lex)
       except ExpectError as ex:
