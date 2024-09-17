@@ -8,9 +8,9 @@ import numpy as np
 from pydantic import BaseModel
 
 import nb
-from dice.dice import Const
 from dice.expr import (
   Cond,
+  Const,
   Evaluatable,
   Evaluated,
   Rollable,
