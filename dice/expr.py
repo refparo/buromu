@@ -538,6 +538,10 @@ class Count(Evaluatable):
 
 
 @dataclass(frozen=True)
+class DivisionByZero(Exception):
+  pass
+
+@dataclass(frozen=True)
 class Binary(Evaluatable):
   class Operator(Enum):
     PLUS = "+"
@@ -572,9 +576,15 @@ class Binary(Evaluatable):
         case Binary.Operator.MULT:
           return Evaluated(lhs.data * rhs.data)
         case Binary.Operator.DIV:
-          return Evaluated(lhs.data // rhs.data)
+          try:
+            return Evaluated(lhs.data // rhs.data)
+          except FloatingPointError:
+            raise DivisionByZero
         case Binary.Operator.MOD:
-          return Evaluated(lhs.data % rhs.data)
+          try:
+            return Evaluated(lhs.data % rhs.data)
+          except FloatingPointError:
+            raise DivisionByZero
     else:
       return Binary(self.op, lhs, rhs)
 
@@ -623,6 +633,10 @@ class Neg(Evaluatable):
 
 
 @dataclass(frozen=True)
+class NegativePower(Exception):
+  pass
+
+@dataclass(frozen=True)
 class Pow(Evaluatable):
   lhs: Evaluatable
   rhs: Evaluatable
@@ -634,7 +648,10 @@ class Pow(Evaluatable):
     if isinstance(self.lhs, Rollable) or isinstance(self.rhs, Rollable):
       return Pow(lhs, rhs)
     elif isinstance(lhs, Evaluated) and isinstance(rhs, Evaluated):
-      return Evaluated(lhs.data**rhs.data)
+      try:
+        return Evaluated(lhs.data**rhs.data)
+      except ValueError:
+        raise NegativePower
     else:
       return Pow(lhs, rhs)
 

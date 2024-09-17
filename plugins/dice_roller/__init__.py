@@ -11,8 +11,10 @@ import nb
 from dice.expr import (
   Cond,
   Const,
+  DivisionByZero,
   Evaluatable,
   Evaluated,
+  NegativePower,
   Rollable,
   RollContext,
   TooManyDice,
@@ -141,6 +143,10 @@ async def roll(
         await on_roll.finish(
           f"“{args.expr[ex.span]}”中巨量的面淹没了你，你淹死了"
         )
+      except DivisionByZero:
+        await on_roll.finish("0 不能做除数！")
+      except NegativePower:
+        await on_roll.finish("负数不能做指数！")
       except Exception as ex:
         await on_roll.finish(
           "表达式解析过程中发生了意料之外的异常：\n"
