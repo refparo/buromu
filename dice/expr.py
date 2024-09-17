@@ -121,7 +121,7 @@ class RolledDice(RawRollable, Evaluatable):
     result = np.sum(self.data, axis=-1)
     return Evaluated(
       np.where(
-        np.broadcast_to(np.ma.getmask(result), result.shape),
+        np.ma.getmaskarray(result),
         0,
         result.astype(int64),
       )
@@ -134,7 +134,7 @@ class RolledDice(RawRollable, Evaluatable):
     else:
       data = self.data[*ctx.select, :]
       if np.ma.is_masked(self.data):
-        data = data[np.broadcast_to(~np.ma.getmask(data), data.shape)]
+        data = data[~np.ma.getmaskarray(data)]
       if len(data) == 0:
         yield "[]"
       elif len(data) == 1:
@@ -153,7 +153,7 @@ class RolledDice(RawRollable, Evaluatable):
 
   def optimize(self) -> "RolledDice":
     mask = ~np.all(
-      np.ma.getmask(self.data), axis=tuple(range(self.data.ndim - 1))
+      np.ma.getmaskarray(self.data), axis=tuple(range(self.data.ndim - 1))
     )
     return RolledDice(
       self.data[..., mask],
