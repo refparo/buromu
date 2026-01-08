@@ -48,7 +48,7 @@ async def typing_delay(bot: nb.Bot, api: str, data: dict[str, Any]):
     case console.Bot():
       if api != "send_msg":
         return
-      match data["message"]:
+      match data["content"]:
         case nonechat.message.ConsoleMessage() as msg:
           msg_len = len(str(msg))
         case msg:

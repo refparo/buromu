@@ -26,7 +26,7 @@ Base.metadata.create_all(engine)
 
 @nb.msg.run_preprocessor
 def check_enabled(evt: ob11.GroupMessageEvent, matcher: Matcher):
-  if not evt.is_tome() and matcher.plugin_id is not None:
+  if not evt.is_tome() and matcher.plugin_id is not None and matcher.plugin_id != "plugin_control":
     with engine.connect() as conn:
       if not conn.scalar(
         sa.select(sa.literal(True)).where(
