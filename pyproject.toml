@@ -1,3 +1,17 @@
+[project]
+name = "buromu"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "nonebot-adapter-console>=0.9.0",
+    "nonebot-adapter-onebot>=2.4.6",
+    "nonebot2[fastapi]>=2.4.4",
+    "numpy>=2.4.0",
+    "sqlalchemy>=2.0.45",
+]
+
 [tool.ruff]
 indent-width = 2
 line-length = 80
